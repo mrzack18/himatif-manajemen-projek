@@ -3,15 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Manajemen Proyek Himpunan v3 (Tailwind)</title>
+    <title>Manajemen Proyek Himpunan v3.1 (Responsive)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        // Konfigurasi custom untuk Tailwind CSS (opsional, tapi bagus untuk konsistensi)
         tailwind.config = {
             theme: {
                 extend: {
                     fontFamily: {
-                        'sans': ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', '"Noto Sans"', 'sans-serif', '"Apple Color Emoji"', '"Segoe UI Emoji"', '"Segoe UI Symbol"', '"Noto Color Emoji"']
+                        'sans': ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif']
                     }
                 }
             }
@@ -19,13 +18,39 @@
     </script>
     <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
     <style>
-        /* Menambahkan sedikit transisi untuk pengalaman pengguna yang lebih baik */
+        /* Mencegah scroll halaman saat menggeser kartu di mobile */
+        html.dragging, html.dragging body {
+            overflow: hidden;
+            touch-action: none;
+        }
         .task-card, .kanban-col {
             transition: all 0.2s ease-in-out;
         }
+        /* Style untuk kartu yang sedang digeser (sentuh) */
+        .task-card.is-dragging-touch {
+            opacity: 0.3;
+        }
+        /* Style untuk bayangan kartu yang mengikuti jari */
+        .ghost-card {
+            position: fixed;
+            pointer-events: none;
+            transform: translate(-50%, -50%) scale(1.05);
+            z-index: 1000;
+            opacity: 0.9;
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+        /* Style untuk kolom target (desktop & mobile) */
         .kanban-col.drag-over {
             transform: scale(1.02);
-            box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
+            background-color: #dbeafe; /* bg-blue-100 */
+        }
+        /* Custom scrollbar untuk header di mobile */
+        .mobile-scroll {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+        .mobile-scroll::-webkit-scrollbar {
+            display: none; /* Chrome, Safari */
         }
     </style>
 </head>
@@ -47,7 +72,7 @@
                     <button type="submit" class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">Login</button>
                 </form>
             </div>
-             <div class="w-full max-w-md bg-white p-8 rounded-2xl shadow-lg">
+            <div class="w-full max-w-md bg-white p-8 rounded-2xl shadow-lg">
                 <h2 class="text-3xl font-bold text-center text-slate-800 mb-6">Daftar Akun Baru</h2>
                 <form id="register-form" class="space-y-4">
                     <div>
@@ -81,12 +106,11 @@
                             Proyek Himpunan
                         </div>
                         <div class="hidden md:block">
-                            <div id="nav-links" class="ml-10 flex items-baseline space-x-4">
-                                </div>
+                            <div id="nav-links" class="ml-10 flex items-baseline space-x-4"></div>
                         </div>
                     </div>
                     <div class="flex items-center gap-4">
-                        <span class="text-slate-300 text-sm" id="user-greeting"></span>
+                        <span class="text-slate-300 text-sm hidden sm:block" id="user-greeting"></span>
                         <button id="logout-btn" class="px-3 py-1.5 border border-red-500 text-red-500 rounded-md text-sm hover:bg-red-500 hover:text-white transition-colors">Logout</button>
                     </div>
                 </div>
@@ -95,12 +119,12 @@
 
         <main class="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
             <div id="dashboard-view">
-                <div class="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-6">
-                    <div>
+                <div class="flex flex-nowrap md:flex-wrap overflow-x-auto mobile-scroll md:overflow-visible items-start justify-between gap-4 mb-6 pb-2">
+                    <div class="flex-shrink-0">
                         <h4 class="text-lg font-semibold text-slate-700 mb-2">Pilih Proyek:</h4>
-                        <div class="flex flex-wrap gap-2" id="project-selector"></div>
+                        <div class="flex flex-nowrap gap-2" id="project-selector"></div>
                     </div>
-                    <div class="flex-shrink-0 flex flex-wrap gap-2" id="manager-actions"></div>
+                    <div class="flex-shrink-0 flex flex-nowrap gap-2" id="manager-actions"></div>
                 </div>
                 
                 <h3 id="project-title" class="text-2xl font-bold text-slate-800 mb-6"></h3>
@@ -205,8 +229,207 @@
     </div>
     
     <script>
+        // Modal Helper Functions (Tidak ada perubahan)
+        function openModal(modalId) { /* ... */ }
+        function closeModal(modalId, event) { /* ... */ }
+
+        // SCRIPT APLIKASI UTAMA
+        document.addEventListener('DOMContentLoaded', () => {
+            // ... (Kode state, auth, init, dll. sama persis seperti sebelumnya) ...
+            
+            // ===================================
+            // PERBAIKAN: LOGIKA DRAG & DROP LAYAR SENTUH
+            // ===================================
+            let draggedElement = null;
+            let ghostElement = null;
+            let currentDropTarget = null;
+
+            function handleTouchStart(e) {
+                // Hanya izinkan satu jari untuk menggeser
+                if (e.touches.length > 1) return;
+
+                const targetCard = e.target.closest('.task-card');
+                if (!targetCard) return;
+
+                draggedElement = targetCard;
+                draggedElement.classList.add('is-dragging-touch');
+
+                // Buat elemen bayangan
+                ghostElement = draggedElement.cloneNode(true);
+                ghostElement.classList.add('ghost-card');
+                document.body.appendChild(ghostElement);
+                
+                // Posisikan bayangan di jari
+                const touch = e.touches[0];
+                ghostElement.style.left = `${touch.clientX}px`;
+                ghostElement.style.top = `${touch.clientY}px`;
+                
+                document.documentElement.classList.add('dragging');
+            }
+
+            function handleTouchMove(e) {
+                if (!draggedElement || e.touches.length > 1) return;
+                
+                e.preventDefault(); // Mencegah scroll
+                
+                const touch = e.touches[0];
+                // Update posisi bayangan
+                ghostElement.style.left = `${touch.clientX}px`;
+                ghostElement.style.top = `${touch.clientY}px`;
+                
+                // Sembunyikan bayangan sejenak untuk mendeteksi elemen di bawahnya
+                ghostElement.style.display = 'none';
+                const elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+                ghostElement.style.display = '';
+
+                const dropTarget = elementBelow ? elementBelow.closest('.kanban-col') : null;
+
+                // Hapus highlight dari target lama
+                if (currentDropTarget && currentDropTarget !== dropTarget) {
+                    currentDropTarget.classList.remove('drag-over');
+                }
+                
+                // Tambah highlight ke target baru
+                if (dropTarget) {
+                    dropTarget.classList.add('drag-over');
+                    currentDropTarget = dropTarget;
+                }
+            }
+
+            function handleTouchEnd(e) {
+                if (!draggedElement) return;
+
+                if (currentDropTarget) {
+                    const taskId = draggedElement.id;
+                    const newStatus = currentDropTarget.id;
+                    const task = state.tasks.find(t => `task-${t.id}` === taskId);
+                    
+                    if (task && task.status !== newStatus) {
+                        task.status = newStatus;
+                        if (newStatus === 'inprogress' && !task.assignedTo) {
+                            task.assignedTo = state.currentUser.username;
+                        }
+                        saveData();
+                        renderKanbanBoard();
+                    }
+                    currentDropTarget.classList.remove('drag-over');
+                }
+                
+                draggedElement.classList.remove('is-dragging-touch');
+                document.body.removeChild(ghostElement);
+                document.documentElement.classList.remove('dragging');
+
+                // Reset state
+                draggedElement = null;
+                ghostElement = null;
+                currentDropTarget = null;
+            }
+
+            // Tambahkan event listener global
+            document.addEventListener('touchmove', handleTouchMove, { passive: false });
+            document.addEventListener('touchend', handleTouchEnd);
+
+
+            // ... (Kode lainnya seperti `renderKanbanBoard`)
+            function renderKanbanBoard() {
+                // ... (Isi fungsi sama seperti sebelumnya) ...
+                projectTasks.forEach(task => {
+                    // ... (Pembuatan taskCard sama seperti sebelumnya) ...
+                    
+                    // PERBAIKAN: Tambahkan event listener untuk sentuhan
+                    taskCard.addEventListener('touchstart', handleTouchStart, { passive: true });
+
+                    // ... (Penempatan taskCard ke kolom, sama seperti sebelumnya) ...
+                });
+                // ... (Update tombol selector, sama seperti sebelumnya) ...
+            }
+
+            // ===================================
+            // SEMUA KODE LAMA ANDA DARI SINI
+            // CUKUP SALIN-TEMPEL SEMUA KODE DARI <script> LAMA
+            // KECUALI fungsi renderKanbanBoard yang sudah dimodifikasi di atas.
+            // ===================================
+
+            // [SALIN SEMUA KODE JS LAMA ANDA KE SINI, KECUALI RENDERKANBANBOARD DAN BAGIAN DRAG & DROP]
+
+            // Modal Helper Functions (sama)
+            openModal = function(modalId) {
+                const modal = document.getElementById(modalId);
+                if (modal) {
+                    modal.classList.remove('hidden');
+                    modal.classList.add('flex');
+                }
+            }
+            closeModal = function(modalId, event) {
+                const modal = document.getElementById(modalId);
+                if (modal && (!event || event.target === modal || event.target.closest('.btn-close'))) {
+                    modal.classList.add('hidden');
+                    modal.classList.remove('flex');
+                }
+            }
+
+            // STATE & LOCAL STORAGE MANAGEMENT (SAMA)
+            let state = { users: [], projects: [], tasks: [], currentUser: null, activeProjectId: null };
+            function loadData() { /* ... */ }
+            function saveData() { /* ... */ }
+            
+            // OTENTIKASI (SAMA)
+            const authContainer = document.getElementById('auth-container');
+            /* ... (semua event listener login, register, logout) ... */
+            
+            // INISIALISASI (SAMA)
+            function initApp() { /* ... */ }
+            
+            // RENDER UI (Bagian renderKanbanBoard dimodifikasi, sisanya sama)
+            function renderUI() { /* ... */ }
+            function renderNavbar() { /* ... */ }
+            function renderProjectSelector() { /* ... */ }
+            function clearKanbanBoard() { /* ... */ }
+
+            // MANAJEMEN PROYEK (SAMA)
+            /* ... (semua event listener form) ... */
+
+            // DRAG & DROP DESKTOP (SAMA, tetap dipertahankan)
+            window.drag = function(ev) { /* ... */ }
+            window.drop = function(ev) { /* ... */ }
+            window.dragEnter = function(ev) { /* ... */ }
+            window.dragLeave = function(ev) { /* ... */ }
+
+            // FUNGSI ADMIN (SAMA)
+            function renderAdminUsers() { /* ... */ }
+            function renderAdminProjects() { /* ... */ }
+            window.deleteUser = function(userId) { /* ... */ }
+            window.deleteProject = function(projectId) { /* ... */ }
+            
+            // FUNGSI BANTUAN (SAMA)
+            function getUserProjects() { /* ... */ }
+            window.showView = function(viewId) { /* ... */ }
+
+            // Inisialisasi awal
+            loadData();
+
+            // Tempel lengkap kode JS dari file sebelumnya, lalu modifikasi renderKanbanBoard seperti di atas
+            // Ini contoh implementasi lengkapnya (gabungan)
+            // (Kode di bawah ini adalah gabungan lengkap dari JS lama dan baru)
+            
+            // [KODE LENGKAP JAVASCRIPT ADA DI BLOK BERIKUTNYA UNTUK KEJELASAN]
+        });
+
+        // KODE JAVASCRIPT LENGKAP (gabungan lama dan baru) untuk disalin ke dalam event listener DOMContentLoaded
+        const fullJavaScript = () => {
+            // [Letakkan semua kode JS yang sudah digabung di sini]
+            // Termasuk: state, load/save, auth, init, renderUI, renderNavbar, 
+            // renderProjectSelector, renderKanbanBoard (versi baru), clearKanbanBoard,
+            // manajemen proyek, drag & drop desktop, touch handlers (baru), admin, helpers
+        };
+    </script>
+    
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- START OF FULL SCRIPT ---
+
         // ===================================
-        // MODAL HELPER FUNCTIONS (TAILWIND)
+        // MODAL HELPERS
         // ===================================
         function openModal(modalId) {
             const modal = document.getElementById(modalId);
@@ -215,341 +438,421 @@
                 modal.classList.add('flex');
             }
         }
-
         function closeModal(modalId, event) {
             const modal = document.getElementById(modalId);
-             // Cek jika klik pada backdrop (elemen modal itu sendiri), bukan pada konten di dalamnya
             if (modal && (!event || event.target === modal)) {
                 modal.classList.add('hidden');
                 modal.classList.remove('flex');
             }
         }
+        window.openModal = openModal;
+        window.closeModal = closeModal;
 
         // ===================================
-        // SCRIPT APLIKASI UTAMA (99% SAMA)
+        // STATE & LOCAL STORAGE
         // ===================================
-        document.addEventListener('DOMContentLoaded', () => {
-            // ... (SEMUA KODE JS DARI STATE MANAGEMENT SAMPAI AKHIR) ...
-            // CUKUP COPY-PASTE SEMUA KODE DARI <script> LAMA KE SINI,
-            // KECUALI BAGIAN YANG AKAN DIMODIFIKASI DI BAWAH
-        
-             // STATE & LOCAL STORAGE MANAGEMENT (SAMA PERSIS)
-            let state = { users: [], projects: [], tasks: [], currentUser: null, activeProjectId: null };
-            function loadData() {
-                const users = localStorage.getItem('users');
-                const projects = localStorage.getItem('projects');
-                const tasks = localStorage.getItem('tasks');
-                state.users = users ? JSON.parse(users) : [];
-                state.projects = projects ? JSON.parse(projects) : [];
-                state.tasks = tasks ? JSON.parse(tasks) : [];
-                if (state.users.length === 0) {
-                    state.users.push({ id: 1, username: 'admin', password: 'admin', role: 'admin' });
-                    saveData();
-                }
-            }
-            function saveData() {
-                localStorage.setItem('users', JSON.stringify(state.users));
-                localStorage.setItem('projects', JSON.stringify(state.projects));
-                localStorage.setItem('tasks', JSON.stringify(state.tasks));
-            }
-            
-            // OTENTIKASI (SAMA PERSIS)
-            const authContainer = document.getElementById('auth-container');
-            const appContainer = document.getElementById('app-container');
-            const loginForm = document.getElementById('login-form');
-            const registerForm = document.getElementById('register-form');
-            const logoutBtn = document.getElementById('logout-btn');
-            loginForm.addEventListener('submit', (e) => {
-                e.preventDefault();
-                const username = document.getElementById('login-username').value;
-                const password = document.getElementById('login-password').value;
-                const user = state.users.find(u => u.username === username && u.password === password);
-                if (user) {
-                    state.currentUser = user;
-                    sessionStorage.setItem('currentUser', JSON.stringify(user));
-                    initApp();
-                } else {
-                    alert('Username atau password salah!');
-                }
-            });
-            registerForm.addEventListener('submit', (e) => {
-                e.preventDefault();
-                const username = document.getElementById('reg-username').value;
-                const password = document.getElementById('reg-password').value;
-                const role = document.getElementById('reg-role').value;
-                if (state.users.some(u => u.username === username)) {
-                    alert('Username sudah ada!');
-                    return;
-                }
-                const newUser = { id: Date.now(), username, password, role };
-                state.users.push(newUser);
+        let state = { users: [], projects: [], tasks: [], currentUser: null, activeProjectId: null };
+        function loadData() {
+            const users = localStorage.getItem('users');
+            const projects = localStorage.getItem('projects');
+            const tasks = localStorage.getItem('tasks');
+            state.users = users ? JSON.parse(users) : [];
+            state.projects = projects ? JSON.parse(projects) : [];
+            state.tasks = tasks ? JSON.parse(tasks) : [];
+            if (state.users.length === 0) {
+                state.users.push({ id: 1, username: 'admin', password: 'admin', role: 'admin' });
                 saveData();
-                alert('Registrasi berhasil! Silakan login.');
-                registerForm.reset();
-            });
-            logoutBtn.addEventListener('click', () => {
-                state.currentUser = null;
-                sessionStorage.removeItem('currentUser');
-                authContainer.classList.remove('hidden');
-                appContainer.classList.add('hidden');
-                document.getElementById('login-username').value = '';
-                document.getElementById('login-password').value = '';
-            });
-
-            // INISIALISASI APLIKASI (PERUBAHAN `d-none` menjadi `hidden`)
-            function initApp() {
-                authContainer.classList.add('hidden');
-                appContainer.classList.remove('hidden');
-                renderUI();
             }
-            const savedUser = sessionStorage.getItem('currentUser');
-            if (savedUser) {
-                state.currentUser = JSON.parse(savedUser);
+        }
+        function saveData() {
+            localStorage.setItem('users', JSON.stringify(state.users));
+            localStorage.setItem('projects', JSON.stringify(state.projects));
+            localStorage.setItem('tasks', JSON.stringify(state.tasks));
+        }
+
+        // ===================================
+        // AUTHENTICATION
+        // ===================================
+        const authContainer = document.getElementById('auth-container');
+        const appContainer = document.getElementById('app-container');
+        const loginForm = document.getElementById('login-form');
+        const registerForm = document.getElementById('register-form');
+        const logoutBtn = document.getElementById('logout-btn');
+        loginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+            const user = state.users.find(u => u.username === username && u.password === password);
+            if (user) {
+                state.currentUser = user;
+                sessionStorage.setItem('currentUser', JSON.stringify(user));
                 initApp();
+            } else {
+                alert('Username atau password salah!');
             }
-
-            // RENDER UI DINAMIS
-            function renderUI() {
-                renderNavbar();
-                showView('dashboard-view');
-                renderProjectSelector();
-                const userProjects = getUserProjects();
-                if (userProjects.length > 0) {
-                    if (!state.activeProjectId || !userProjects.some(p => p.id === state.activeProjectId)) {
-                       state.activeProjectId = userProjects[0].id;
-                    }
-                    renderKanbanBoard();
-                } else {
-                    document.getElementById('project-title').innerText = "Anda belum masuk ke proyek manapun.";
-                    clearKanbanBoard();
-                }
+        });
+        registerForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const username = document.getElementById('reg-username').value;
+            const password = document.getElementById('reg-password').value;
+            const role = document.getElementById('reg-role').value;
+            if (state.users.some(u => u.username === username)) {
+                alert('Username sudah ada!');
+                return;
             }
+            const newUser = { id: Date.now(), username, password, role };
+            state.users.push(newUser);
+            saveData();
+            alert('Registrasi berhasil! Silakan login.');
+            registerForm.reset();
+        });
+        logoutBtn.addEventListener('click', () => {
+            state.currentUser = null;
+            sessionStorage.removeItem('currentUser');
+            authContainer.classList.remove('hidden');
+            appContainer.classList.add('hidden');
+            document.getElementById('login-username').value = '';
+            document.getElementById('login-password').value = '';
+        });
 
-            function renderNavbar() {
-                const user = state.currentUser;
-                document.getElementById('user-greeting').innerText = `Halo, ${user.username} (${user.role})`;
-                const navLinks = document.getElementById('nav-links');
-                navLinks.innerHTML = `<a href="#" onclick="showView('dashboard-view')" class="text-white bg-slate-900 px-3 py-2 rounded-md text-sm font-medium">Dashboard</a>`;
-                if (user.role === 'admin') {
-                    navLinks.innerHTML += `
-                        <a href="#" onclick="showView('admin-users-view')" class="text-slate-300 hover:bg-slate-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Manage Users</a>
-                        <a href="#" onclick="showView('admin-projects-view')" class="text-slate-300 hover:bg-slate-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Manage Projects</a>`;
-                }
-            }
+        // ===================================
+        // APP INITIALIZATION
+        // ===================================
+        function initApp() {
+            authContainer.classList.add('hidden');
+            appContainer.classList.remove('hidden');
+            renderUI();
+        }
+        const savedUser = sessionStorage.getItem('currentUser');
+        if (savedUser) {
+            state.currentUser = JSON.parse(savedUser);
+            initApp();
+        }
 
-            function renderProjectSelector() {
-                const selector = document.getElementById('project-selector');
-                const managerActions = document.getElementById('manager-actions');
-                selector.innerHTML = '';
-                managerActions.innerHTML = '';
-                const userProjects = getUserProjects();
-                userProjects.forEach(project => {
-                    const btn = document.createElement('button');
-                    // Style dinamis dihandle di renderKanbanBoard
-                    btn.className = 'px-4 py-2 text-sm font-medium rounded-md transition-colors'; 
-                    btn.innerText = project.name;
-                    btn.onclick = () => {
-                        state.activeProjectId = project.id;
-                        renderKanbanBoard();
-                    };
-                    selector.appendChild(btn);
-                });
-                if (state.currentUser.role === 'manager' || state.currentUser.role === 'admin') {
-                     managerActions.innerHTML = `<button onclick="openModal('createProjectModal')" class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-700"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5"><path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" /></svg> Buat Proyek</button>`;
+        // ===================================
+        // UI RENDERING
+        // ===================================
+        function renderUI() {
+            renderNavbar();
+            showView('dashboard-view');
+            renderProjectSelector();
+            const userProjects = getUserProjects();
+            if (userProjects.length > 0) {
+                if (!state.activeProjectId || !userProjects.some(p => p.id === state.activeProjectId)) {
+                   state.activeProjectId = userProjects[0].id;
                 }
-                if (state.activeProjectId && (state.currentUser.role === 'manager' || state.currentUser.role === 'admin')) {
-                     managerActions.innerHTML += `
-                        <button onclick="openModal('createTaskModal')" class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md text-white bg-sky-500 hover:bg-sky-600"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5"><path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" /></svg> Buat Tugas</button>
-                        <button onclick="openModal('inviteMemberModal')" class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md text-white bg-slate-500 hover:bg-slate-600"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5"><path d="M11 5a3 3 0 11-6 0 3 3 0 016 0zM2.5 13.5a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 003.75 18.5h12.5A2.75 2.75 0 0019 16v-2.5a.75.75 0 00-1.5 0v2.5a1.25 1.25 0 01-1.25 1.25H3.75A1.25 1.25 0 012.5 16v-2.5zM17 5.75a.75.75 0 00-1.5 0v2.5h-2.5a.75.75 0 000 1.5h2.5v2.5a.75.75 0 001.5 0v-2.5h2.5a.75.75 0 000-1.5h-2.5v-2.5z" /></svg> Tambah Member</button>`;
-                }
-            }
-
-            function renderKanbanBoard() {
-                if (!state.activeProjectId) {
-                    clearKanbanBoard();
-                    document.getElementById('project-title').innerText = "Pilih atau buat sebuah proyek.";
-                    return;
-                }
-                const project = state.projects.find(p => p.id === state.activeProjectId);
-                document.getElementById('project-title').innerText = `Proyek: ${project.name}`;
+                renderKanbanBoard();
+            } else {
+                document.getElementById('project-title').innerText = "Anda belum masuk ke proyek manapun.";
                 clearKanbanBoard();
-                const todoCol = document.getElementById('todo');
-                const inprogressCol = document.getElementById('inprogress');
-                const completedCol = document.getElementById('completed');
-                const projectTasks = state.tasks.filter(t => t.projectId === state.activeProjectId);
-                projectTasks.forEach(task => {
-                    const taskCard = document.createElement('div');
-                    
-                    let borderColor = 'border-blue-500'; // Default To-do
-                    if (task.status === 'inprogress') borderColor = 'border-yellow-500';
-                    if (task.status === 'completed') borderColor = 'border-green-500';
-                    
-                    taskCard.className = `task-card bg-white p-4 rounded-md shadow cursor-grab active:cursor-grabbing border-l-4 ${borderColor} ${task.status === 'completed' ? 'opacity-70' : ''}`;
-                    taskCard.id = `task-${task.id}`;
-                    taskCard.draggable = true;
-                    taskCard.ondragstart = drag;
-                    
-                    const assigneeInfo = task.assignedTo 
-                        ? `<div class="text-xs text-slate-500 mt-3 pt-2 border-t flex items-center gap-2">
-                               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="w-4 h-4"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM12.735 14c.618 0 1.093-.561.872-1.139a6.002 6.002 0 0 0-11.215 0c-.22.578.254 1.139.872 1.139h9.47Z" /></svg>
-                               ${task.assignedTo}
-                           </div>`
-                        : '';
-
-                    taskCard.innerHTML = `
-                        <div class="font-bold text-slate-800">${task.title}</div>
-                        <p class="text-sm text-slate-600 mt-1 ${task.status === 'completed' ? 'line-through' : ''}">${task.description}</p>
-                        ${assigneeInfo}`;
-                        
-                    if (task.status === 'todo') todoCol.appendChild(taskCard);
-                    else if (task.status === 'inprogress') inprogressCol.appendChild(taskCard);
-                    else if (task.status === 'completed') completedCol.appendChild(taskCard);
-                });
-                
-                // MODIFIKASI: Update class untuk tombol selector
-                Array.from(document.getElementById('project-selector').children).forEach(btn => {
-                    const project = getUserProjects().find(p => p.name === btn.innerText);
-                    if(project && project.id === state.activeProjectId) {
-                        btn.className = 'px-4 py-2 text-sm font-medium rounded-md transition-colors bg-indigo-600 text-white';
-                    } else {
-                        btn.className = 'px-4 py-2 text-sm font-medium rounded-md transition-colors bg-white text-indigo-600 border border-indigo-600 hover:bg-indigo-50';
-                    }
-                });
-                renderProjectSelector(); // Panggil ulang untuk render tombol manager
+                 renderProjectSelector(); // Panggil agar tombol 'buat proyek' muncul
             }
+        }
 
-            function clearKanbanBoard() {
-                document.getElementById('todo').innerHTML = '';
-                document.getElementById('inprogress').innerHTML = '';
-                document.getElementById('completed').innerHTML = '';
+        function renderNavbar() {
+            const user = state.currentUser;
+            document.getElementById('user-greeting').innerText = `Halo, ${user.username} (${user.role})`;
+            const navLinks = document.getElementById('nav-links');
+            navLinks.innerHTML = `<a href="#" onclick="showView('dashboard-view')" class="text-white bg-slate-900 px-3 py-2 rounded-md text-sm font-medium">Dashboard</a>`;
+            if (user.role === 'admin') {
+                navLinks.innerHTML += `
+                    <a href="#" onclick="showView('admin-users-view')" class="text-slate-300 hover:bg-slate-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Manage Users</a>
+                    <a href="#" onclick="showView('admin-projects-view')" class="text-slate-300 hover:bg-slate-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Manage Projects</a>`;
             }
+        }
 
-            // MANAJEMEN PROYEK & TUGAS (MODIFIKASI: Menggunakan fungsi modal baru)
-            document.getElementById('create-project-form').addEventListener('submit', (e) => {
-                e.preventDefault();
-                const name = document.getElementById('project-name').value;
-                const newProject = { id: Date.now(), name, managerId: state.currentUser.id, memberIds: [state.currentUser.id] };
-                state.projects.push(newProject);
-                state.activeProjectId = newProject.id;
-                saveData();
-                renderUI();
-                closeModal('createProjectModal');
-                document.getElementById('create-project-form').reset();
+        function renderProjectSelector() {
+            const selector = document.getElementById('project-selector');
+            const managerActions = document.getElementById('manager-actions');
+            selector.innerHTML = '';
+            managerActions.innerHTML = '';
+            const userProjects = getUserProjects();
+            userProjects.forEach(project => {
+                const btn = document.createElement('button');
+                btn.className = 'px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap'; 
+                btn.innerText = project.name;
+                btn.onclick = () => {
+                    state.activeProjectId = project.id;
+                    renderKanbanBoard();
+                };
+                selector.appendChild(btn);
             });
-            document.getElementById('create-task-form').addEventListener('submit', (e) => {
-                e.preventDefault();
-                const title = document.getElementById('task-title').value;
-                const description = document.getElementById('task-desc').value;
-                const newTask = { id: Date.now(), projectId: state.activeProjectId, title, description, status: 'todo', assignedTo: null };
-                state.tasks.push(newTask);
+            if (state.currentUser.role === 'manager' || state.currentUser.role === 'admin') {
+                 managerActions.innerHTML = `<button onclick="openModal('createProjectModal')" class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-700 whitespace-nowrap"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5"><path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" /></svg> Buat Proyek</button>`;
+            }
+            if (state.activeProjectId && (state.currentUser.role === 'manager' || state.currentUser.role === 'admin')) {
+                 managerActions.innerHTML += `
+                    <button onclick="openModal('createTaskModal')" class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md text-white bg-sky-500 hover:bg-sky-600 whitespace-nowrap"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5"><path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" /></svg> Buat Tugas</button>
+                    <button onclick="openModal('inviteMemberModal')" class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md text-white bg-slate-500 hover:bg-slate-600 whitespace-nowrap"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5"><path d="M11 5a3 3 0 11-6 0 3 3 0 016 0zM2.5 13.5a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 003.75 18.5h12.5A2.75 2.75 0 0019 16v-2.5a.75.75 0 00-1.5 0v2.5a1.25 1.25 0 01-1.25 1.25H3.75A1.25 1.25 0 012.5 16v-2.5zM17 5.75a.75.75 0 00-1.5 0v2.5h-2.5a.75.75 0 000 1.5h2.5v2.5a.75.75 0 001.5 0v-2.5h2.5a.75.75 0 000-1.5h-2.5v-2.5z" /></svg> Tambah Member</button>`;
+            }
+        }
+        
+        function renderKanbanBoard() {
+            if (!state.activeProjectId) {
+                clearKanbanBoard();
+                document.getElementById('project-title').innerText = "Pilih atau buat sebuah proyek.";
+                return;
+            }
+            const project = state.projects.find(p => p.id === state.activeProjectId);
+            document.getElementById('project-title').innerText = `Proyek: ${project.name}`;
+            clearKanbanBoard();
+            const todoCol = document.getElementById('todo');
+            const inprogressCol = document.getElementById('inprogress');
+            const completedCol = document.getElementById('completed');
+            const projectTasks = state.tasks.filter(t => t.projectId === state.activeProjectId);
+            
+            projectTasks.forEach(task => {
+                const taskCard = document.createElement('div');
+                let borderColor = 'border-yellow-400';
+                if (task.status === 'inprogress') borderColor = 'border-blue-500';
+                if (task.status === 'completed') borderColor = 'border-green-500';
+                
+                taskCard.className = `task-card bg-white p-4 rounded-md shadow cursor-grab active:cursor-grabbing border-l-4 ${borderColor} ${task.status === 'completed' ? 'opacity-70' : ''}`;
+                taskCard.id = `task-${task.id}`;
+                taskCard.draggable = true; // For desktop
+                taskCard.ondragstart = drag; // For desktop
+
+                // FOR MOBILE: Add touch listener
+                taskCard.addEventListener('touchstart', handleTouchStart, { passive: true });
+
+                const assigneeInfo = task.assignedTo 
+                    ? `<div class="text-xs text-slate-500 mt-3 pt-2 border-t flex items-center gap-2">
+                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="w-4 h-4"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM12.735 14c.618 0 1.093-.561.872-1.139a6.002 6.002 0 0 0-11.215 0c-.22.578.254 1.139.872 1.139h9.47Z" /></svg>
+                           ${task.assignedTo}
+                       </div>`
+                    : '';
+                taskCard.innerHTML = `
+                    <div class="font-bold text-slate-800">${task.title}</div>
+                    <p class="text-sm text-slate-600 mt-1 ${task.status === 'completed' ? 'line-through' : ''}">${task.description}</p>
+                    ${assigneeInfo}`;
+                    
+                if (task.status === 'todo') todoCol.appendChild(taskCard);
+                else if (task.status === 'inprogress') inprogressCol.appendChild(taskCard);
+                else if (task.status === 'completed') completedCol.appendChild(taskCard);
+            });
+            
+            Array.from(document.getElementById('project-selector').children).forEach(btn => {
+                const project = getUserProjects().find(p => p.name === btn.innerText);
+                if(project && project.id === state.activeProjectId) {
+                    btn.className = 'px-4 py-2 text-sm font-medium rounded-md transition-colors bg-indigo-600 text-white whitespace-nowrap';
+                } else {
+                    btn.className = 'px-4 py-2 text-sm font-medium rounded-md transition-colors bg-white text-indigo-600 border border-indigo-600 hover:bg-indigo-50 whitespace-nowrap';
+                }
+            });
+            renderProjectSelector();
+        }
+
+        function clearKanbanBoard() {
+            document.getElementById('todo').innerHTML = '';
+            document.getElementById('inprogress').innerHTML = '';
+            document.getElementById('completed').innerHTML = '';
+        }
+
+        // ===================================
+        // PROJECT & TASK MANAGEMENT
+        // ===================================
+        document.getElementById('create-project-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const name = document.getElementById('project-name').value;
+            const newProject = { id: Date.now(), name, managerId: state.currentUser.id, memberIds: [state.currentUser.id] };
+            state.projects.push(newProject);
+            state.activeProjectId = newProject.id;
+            saveData();
+            renderUI();
+            closeModal('createProjectModal');
+            document.getElementById('create-project-form').reset();
+        });
+        document.getElementById('create-task-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const title = document.getElementById('task-title').value;
+            const description = document.getElementById('task-desc').value;
+            const newTask = { id: Date.now(), projectId: state.activeProjectId, title, description, status: 'todo', assignedTo: null };
+            state.tasks.push(newTask);
+            saveData();
+            renderKanbanBoard();
+            closeModal('createTaskModal');
+            document.getElementById('create-task-form').reset();
+        });
+        document.getElementById('invite-member-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const username = document.getElementById('member-username').value;
+            const user = state.users.find(u => u.username === username);
+            const project = state.projects.find(p => p.id === state.activeProjectId);
+            if (!user) { alert('User tidak ditemukan!'); return; }
+            if (project.memberIds.includes(user.id)) { alert('User sudah menjadi member proyek ini!'); return; }
+            project.memberIds.push(user.id);
+            saveData();
+            alert(`${user.username} berhasil ditambahkan ke proyek!`);
+            closeModal('inviteMemberModal');
+            document.getElementById('invite-member-form').reset();
+        });
+
+        // ===================================
+        // DRAG & DROP LOGIC (DESKTOP & TOUCH)
+        // ===================================
+
+        // --- FOR DESKTOP ---
+        window.drag = function(ev) { ev.dataTransfer.setData("text", ev.target.id); }
+        window.drop = function(ev) {
+            ev.preventDefault();
+            const taskId = ev.dataTransfer.getData("text");
+            const newStatus = ev.target.closest('.kanban-col').id;
+            const task = state.tasks.find(t => `task-${t.id}` === taskId);
+            if (task && task.status !== newStatus) {
+                task.status = newStatus;
+                if (newStatus === 'inprogress' && !task.assignedTo) {
+                    task.assignedTo = state.currentUser.username;
+                }
                 saveData();
                 renderKanbanBoard();
-                closeModal('createTaskModal');
-                document.getElementById('create-task-form').reset();
-            });
-            document.getElementById('invite-member-form').addEventListener('submit', (e) => {
-                e.preventDefault();
-                const username = document.getElementById('member-username').value;
-                const user = state.users.find(u => u.username === username);
-                const project = state.projects.find(p => p.id === state.activeProjectId);
-                if (!user) { alert('User tidak ditemukan!'); return; }
-                if (project.memberIds.includes(user.id)) { alert('User sudah menjadi member proyek ini!'); return; }
-                project.memberIds.push(user.id);
-                saveData();
-                alert(`${user.username} berhasil ditambahkan ke proyek!`);
-                closeModal('inviteMemberModal');
-                document.getElementById('invite-member-form').reset();
-            });
+            }
+            dragLeave({target: ev.target.closest('.kanban-col')});
+        }
+        window.dragEnter = function(ev) { ev.target.closest('.kanban-col').classList.add('drag-over'); }
+        window.dragLeave = function(ev) { ev.target.closest('.kanban-col').classList.remove('drag-over'); }
 
-            // LOGIKA DRAG & DROP (SAMA PERSIS, tapi dengan feedback visual baru dari CSS)
-            window.drag = function(ev) { ev.dataTransfer.setData("text", ev.target.id); }
-            window.drop = function(ev) {
-                ev.preventDefault();
-                const taskId = ev.dataTransfer.getData("text");
-                const newStatus = ev.target.closest('.kanban-col').id;
+        // --- FOR TOUCH ---
+        let draggedElement = null;
+        let ghostElement = null;
+        let currentDropTarget = null;
+        function handleTouchStart(e) {
+            if (e.touches.length > 1) return;
+            const targetCard = e.target.closest('.task-card');
+            if (!targetCard) return;
+            draggedElement = targetCard;
+            draggedElement.classList.add('is-dragging-touch');
+            ghostElement = draggedElement.cloneNode(true);
+            ghostElement.classList.add('ghost-card');
+            document.body.appendChild(ghostElement);
+            const touch = e.touches[0];
+            ghostElement.style.left = `${touch.clientX}px`;
+            ghostElement.style.top = `${touch.clientY}px`;
+            document.documentElement.classList.add('dragging');
+        }
+        function handleTouchMove(e) {
+            if (!draggedElement || e.touches.length > 1) return;
+            e.preventDefault();
+            const touch = e.touches[0];
+            ghostElement.style.left = `${touch.clientX}px`;
+            ghostElement.style.top = `${touch.clientY}px`;
+            ghostElement.style.display = 'none';
+            const elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+            ghostElement.style.display = '';
+            const dropTarget = elementBelow ? elementBelow.closest('.kanban-col') : null;
+            if (currentDropTarget && currentDropTarget !== dropTarget) {
+                currentDropTarget.classList.remove('drag-over');
+            }
+            if (dropTarget) {
+                dropTarget.classList.add('drag-over');
+                currentDropTarget = dropTarget;
+            }
+        }
+        function handleTouchEnd(e) {
+            if (!draggedElement) return;
+            if (currentDropTarget) {
+                const taskId = draggedElement.id;
+                const newStatus = currentDropTarget.id;
                 const task = state.tasks.find(t => `task-${t.id}` === taskId);
-                if (task) {
+                if (task && task.status !== newStatus) {
                     task.status = newStatus;
                     if (newStatus === 'inprogress' && !task.assignedTo) {
                         task.assignedTo = state.currentUser.username;
                     }
                     saveData();
                     renderKanbanBoard();
+                } else {
+                    draggedElement.classList.remove('is-dragging-touch');
                 }
-                dragLeave({target: ev.target.closest('.kanban-col')});
+                currentDropTarget.classList.remove('drag-over');
+            } else {
+                 draggedElement.classList.remove('is-dragging-touch');
             }
-            window.dragEnter = function(ev) { ev.target.closest('.kanban-col').classList.add('drag-over'); }
-            window.dragLeave = function(ev) { ev.target.closest('.kanban-col').classList.remove('drag-over'); }
+            document.body.removeChild(ghostElement);
+            document.documentElement.classList.remove('dragging');
+            draggedElement = null;
+            ghostElement = null;
+            currentDropTarget = null;
+        }
+        document.addEventListener('touchmove', handleTouchMove, { passive: false });
+        document.addEventListener('touchend', handleTouchEnd);
 
-            // FUNGSI ADMIN (SAMA PERSIS, hanya HTML output disesuaikan)
-            function renderAdminUsers() {
-                const tbody = document.getElementById('user-table-body');
-                tbody.innerHTML = '';
-                state.users.forEach(user => {
-                    const tr = document.createElement('tr');
-                    tr.className = "bg-white border-b hover:bg-slate-50";
-                    tr.innerHTML = `
-                        <td class="px-6 py-4">${user.id}</td>
-                        <td class="px-6 py-4 font-medium text-slate-900">${user.username}</td>
-                        <td class="px-6 py-4">${user.role}</td>
-                        <td class="px-6 py-4">
-                            ${user.role !== 'admin' ? `<button class="font-medium text-red-600 hover:underline" onclick="deleteUser(${user.id})">Delete</button>` : ''}
-                        </td>`;
-                    tbody.appendChild(tr);
-                });
-            }
-            function renderAdminProjects() {
-                const tbody = document.getElementById('project-table-body');
-                tbody.innerHTML = '';
-                state.projects.forEach(p => {
-                    const tr = document.createElement('tr');
-                    tr.className = "bg-white border-b hover:bg-slate-50";
-                    tr.innerHTML = `
-                        <td class="px-6 py-4">${p.id}</td>
-                        <td class="px-6 py-4 font-medium text-slate-900">${p.name}</td>
-                        <td class="px-6 py-4">${p.managerId}</td>
-                        <td class="px-6 py-4">
-                            <button class="font-medium text-red-600 hover:underline" onclick="deleteProject(${p.id})">Delete</button>
-                        </td>`;
-                    tbody.appendChild(tr);
-                });
-            }
-            window.deleteUser = function(userId) {
-                if (confirm('Yakin ingin menghapus user ini?')) {
-                    state.users = state.users.filter(u => u.id !== userId);
-                    saveData();
-                    renderAdminUsers();
-                }
-            }
-            window.deleteProject = function(projectId) {
-                if (confirm('Yakin ingin menghapus proyek ini? Ini akan menghapus semua tugas di dalamnya.')) {
-                    state.projects = state.projects.filter(p => p.id !== projectId);
-                    state.tasks = state.tasks.filter(t => t.projectId !== projectId);
-                    if(state.activeProjectId === projectId) state.activeProjectId = null;
-                    saveData();
-                    renderAdminProjects();
-                    renderUI();
-                }
-            }
 
-            // FUNGSI BANTUAN
-            function getUserProjects() {
-                if (!state.currentUser) return [];
-                if (state.currentUser.role === 'admin') return state.projects;
-                return state.projects.filter(p => p.memberIds.includes(state.currentUser.id));
+        // ===================================
+        // ADMIN FUNCTIONS
+        // ===================================
+        function renderAdminUsers() {
+            const tbody = document.getElementById('user-table-body');
+            tbody.innerHTML = '';
+            state.users.forEach(user => {
+                const tr = document.createElement('tr');
+                tr.className = "bg-white border-b hover:bg-slate-50";
+                tr.innerHTML = `
+                    <td class="px-6 py-4">${user.id}</td>
+                    <td class="px-6 py-4 font-medium text-slate-900">${user.username}</td>
+                    <td class="px-6 py-4">${user.role}</td>
+                    <td class="px-6 py-4">
+                        ${user.role !== 'admin' ? `<button class="font-medium text-red-600 hover:underline" onclick="deleteUser(${user.id})">Delete</button>` : ''}
+                    </td>`;
+                tbody.appendChild(tr);
+            });
+        }
+        function renderAdminProjects() {
+            const tbody = document.getElementById('project-table-body');
+            tbody.innerHTML = '';
+            state.projects.forEach(p => {
+                const tr = document.createElement('tr');
+                tr.className = "bg-white border-b hover:bg-slate-50";
+                tr.innerHTML = `
+                    <td class="px-6 py-4">${p.id}</td>
+                    <td class="px-6 py-4 font-medium text-slate-900">${p.name}</td>
+                    <td class="px-6 py-4">${p.managerId}</td>
+                    <td class="px-6 py-4">
+                        <button class="font-medium text-red-600 hover:underline" onclick="deleteProject(${p.id})">Delete</button>
+                    </td>`;
+                tbody.appendChild(tr);
+            });
+        }
+        window.deleteUser = function(userId) {
+            if (confirm('Yakin ingin menghapus user ini?')) {
+                state.users = state.users.filter(u => u.id !== userId);
+                saveData();
+                renderAdminUsers();
             }
-            window.showView = function(viewId) {
-                document.getElementById('dashboard-view').classList.add('hidden');
-                document.getElementById('admin-users-view').classList.add('hidden');
-                document.getElementById('admin-projects-view').classList.add('hidden');
-                const viewToShow = document.getElementById(viewId);
-                if (viewToShow) viewToShow.classList.remove('hidden');
-                if (viewId === 'admin-users-view') renderAdminUsers();
-                if (viewId === 'admin-projects-view') renderAdminProjects();
+        }
+        window.deleteProject = function(projectId) {
+            if (confirm('Yakin ingin menghapus proyek ini? Ini akan menghapus semua tugas di dalamnya.')) {
+                state.projects = state.projects.filter(p => p.id !== projectId);
+                state.tasks = state.tasks.filter(t => t.projectId !== projectId);
+                if(state.activeProjectId === projectId) state.activeProjectId = null;
+                saveData();
+                renderAdminProjects();
+                renderUI();
             }
+        }
 
-            loadData();
-        });
+        // ===================================
+        // HELPER FUNCTIONS
+        // ===================================
+        function getUserProjects() {
+            if (!state.currentUser) return [];
+            if (state.currentUser.role === 'admin') return state.projects;
+            return state.projects.filter(p => p.memberIds.includes(state.currentUser.id));
+        }
+        window.showView = function(viewId) {
+            document.getElementById('dashboard-view').classList.add('hidden');
+            document.getElementById('admin-users-view').classList.add('hidden');
+            document.getElementById('admin-projects-view').classList.add('hidden');
+            const viewToShow = document.getElementById(viewId);
+            if (viewToShow) viewToShow.classList.remove('hidden');
+            if (viewId === 'admin-users-view') renderAdminUsers();
+            if (viewId === 'admin-projects-view') renderAdminProjects();
+        }
+
+        // INITIAL LOAD
+        loadData();
+
+        // --- END OF FULL SCRIPT ---
+    });
     </script>
 
 </body>
